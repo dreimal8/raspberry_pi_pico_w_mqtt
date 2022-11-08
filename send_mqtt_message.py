@@ -16,13 +16,12 @@ led_onboard.off()
 # wifi
 ssid = config.ssid
 password = config.password
-wifiConnection = False
     
 # mqtt
 mqtt_server = config.mqtt_server
 client_id = 'picoW'
 topic_pub = 'pico_topic'
-mqtt_client = MQTTClient(client_id, mqtt_server, keepalive=3600) # connection will stay up for one hour
+mqtt_max_reconnect = 5
 
 
 ###########################################################################
@@ -42,7 +41,7 @@ def blink(count, sleep):
 ###########################################################################
 def wifi_connect():
     
-    global wifiConnection
+    global wlan
     
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
@@ -66,7 +65,6 @@ def wifi_connect():
     else:
         print('Connected')
         status = wlan.ifconfig()
-        wifiConnection = True
         print( 'ip = ' + status[0] )    
 
 
@@ -77,6 +75,7 @@ def mqtt_connect():
     
     global mqtt_client
     
+    mqtt_client = MQTTClient(client_id, mqtt_server, keepalive=3600) # connection will stay up for one hour
     print('Connect to mqtt...')
     mqtt_client.connect()
     print('Connected to %s MQTT Broker'%(mqtt_server))
@@ -85,10 +84,11 @@ def mqtt_connect():
 ###########################################################################
 #   if sending mqtt message fails - reconnect here
 ###########################################################################
-def reconnect():
+def mqtt_reconnect():
     print('Failed to connect to the MQTT Broker. Reconnecting...')
-    blink(5, 0.2)
-    time.sleep(5)
+    mqtt_max_reconnect -= 1
+    blink(5, 0.1)
+    time.sleep(0.5)
     mqtt_connect()
 
 
@@ -98,17 +98,23 @@ def reconnect():
 def sendMqtt(topic_msg):
     
     global mqtt_client
+    global mqtt_max_reconnect
     
-    if wifiConnection:
+    if wlan.status() == 3:
         print('mqtt start - try to send...')
         try:
             mqtt_client.check_msg() # to check if mqtt connection is still alive
             mqtt_client.publish(topic_pub, topic_msg)
             print('Message sent: \"' + topic_msg + "\"")
+            mqtt_max_reconnect = 5
             blink(2, 0.2)
         except OSError as e:
-            reconnect()
-            sendMqtt(topic_msg) # after reconnect - send again!
+            if mqtt_max_reconnect > 0:
+                mqtt_reconnect()
+                sendMqtt(topic_msg) # after reconnect - send again!
+            else:
+                time.sleep(5)
+                machine.reset()
     else:
         print('No wifi')
 
@@ -119,9 +125,14 @@ def sendMqtt(topic_msg):
 wifi_connect()
 mqtt_connect()
 
+
+
 while True:
     if button.value() == 1:
-        print("Button detected!")
+        print('Button detected!')
+        print('wlan status: ' + str(wlan.status()))
+        if wlan.status() != 3:
+            wifi_connect()
         sendMqtt('alive')
         time.sleep(2)
         blink(1, 0.2)
