@@ -21,6 +21,7 @@ password = config.password
 mqtt_server = config.mqtt_server
 client_id = 'picoW'
 topic_pub = 'pico_topic'
+topic_sub = 'pico_topic_sub'
 mqtt_max_reconnect = 5
 
 
@@ -79,6 +80,7 @@ def mqtt_connect():
     print('Connect to mqtt...')
     mqtt_client.connect()
     print('Connected to %s MQTT Broker'%(mqtt_server))
+    mqtt_client.set_callback(mqtt_callback)
 
 
 ###########################################################################
@@ -86,6 +88,7 @@ def mqtt_connect():
 ###########################################################################
 def mqtt_reconnect():
     print('Failed to connect to the MQTT Broker. Reconnecting...')
+    mqtt_client.disconnect()
     mqtt_max_reconnect -= 1
     blink(5, 0.1)
     time.sleep(0.5)
@@ -105,7 +108,7 @@ def sendMqtt(topic_msg):
         try:
             mqtt_client.check_msg() # to check if mqtt connection is still alive
             mqtt_client.publish(topic_pub, topic_msg)
-            print('Message sent: \"' + topic_msg + "\"")
+            print('Message sent: \"' + topic_msg + '\"')
             mqtt_max_reconnect = 5
             blink(2, 0.2)
         except OSError as e:
@@ -120,14 +123,29 @@ def sendMqtt(topic_msg):
 
 
 ###########################################################################
+#   recieve mqtt message, reconnect if necessary
+###########################################################################
+def mqtt_callback(topic, msg):
+    print('New message on topic {}'.format(topic.decode('utf-8')) + ' \"' + msg.decode('utf-8') + '\"')
+    blink(2, 0.1)
+    
+    
+###########################################################################
 #   M A I N
 ###########################################################################
 wifi_connect()
 mqtt_connect()
-
-
+mqtt_client.subscribe(topic_sub)
 
 while True:
+    
+    try:
+        mqtt_client.check_msg() # to check if mqtt connection is still alive
+        mqtt_max_reconnect = 5
+    except OSError as e:
+        if mqtt_max_reconnect > 0:
+            mqtt_reconnect()
+    
     if button.value() == 1:
         print('Button detected!')
         print('wlan status: ' + str(wlan.status()))
